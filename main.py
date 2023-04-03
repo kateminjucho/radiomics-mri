@@ -58,6 +58,11 @@ def main():
     ]
 
     for function_name in function_list:
+        ''' Explanation about getattr usage '''
+        ''' If function_name is getPixelSurfaceFeatureValue '''
+        ''' "getattr(radio_shape_2d, function_name)" equals to radio_shape_2d.getPixelSurfaceFeatureValue '''
+        ''' So, "result = function()" equals to "radio_shape_2d.getPixelSurfaceFeatureValue()" '''
+        ''' The reason why I used this way is to handle the target functions as list. '''
         function = getattr(radio_shape_2d, function_name)
         result = function()
         print('%s Results: ' % function_name, result)
