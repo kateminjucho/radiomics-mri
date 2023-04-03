@@ -15,6 +15,8 @@ import radiomics
 import numpy as np
 from radiomics.firstorder import RadiomicsFirstOrder
 from radiomics.shape2D import RadiomicsShape2D
+from radiomics.gldm import RadiomicsGLDM
+from radiomics.glcm import RadiomicsGLCM
 import SimpleITK as sitk
 
 
@@ -44,28 +46,30 @@ def main():
     temporary_mask[200:250, 200:250] = 1
     temporary_mask = sitk.GetImageFromArray(temporary_mask)
 
-    radio_shape_2d = RadiomicsShape2D(standard_img, temporary_mask)
+    features = RadiomicsFirstOrder(standard_img, temporary_mask)
+    # features = RadiomicsGLCM(standard_img, temporary_mask)
+    # features = RadiomicsGLDM(standard_img, temporary_mask)
+    # features = RadiomicsShape2D(standard_img, temporary_mask)
 
-    function_list = [
-        # 'getMeshSurfaceFeatureValue',
-        'getPixelSurfaceFeatureValue',
-        'getPerimeterFeatureValue',
-        'getPerimeterSurfaceRatioFeatureValue',
-        'getSphericityFeatureValue',
-        'getSphericalDisproportionFeatureValue',
-        'getMaximumDiameterFeatureValue',
-        'getMajorAxisLengthFeatureValue',
-    ]
+    if type(features) in [RadiomicsFirstOrder, RadiomicsGLCM, RadiomicsGLDM]:
+        features._initCalculation()
 
-    for function_name in function_list:
+    available_function_list = [attr for attr in dir(features) if
+                               (attr.startswith('get') and attr.endswith('Value'))]
+
+    for function_name in available_function_list:
         ''' Explanation about getattr usage '''
         ''' If function_name is getPixelSurfaceFeatureValue '''
         ''' "getattr(radio_shape_2d, function_name)" equals to radio_shape_2d.getPixelSurfaceFeatureValue '''
         ''' So, "result = function()" equals to "radio_shape_2d.getPixelSurfaceFeatureValue()" '''
         ''' The reason why I used this way is to handle the target functions as list. '''
-        function = getattr(radio_shape_2d, function_name)
-        result = function()
-        print('%s Results: ' % function_name, result)
+        function = getattr(features, function_name)
+        try:
+            result = function()
+            print('%s Results: ' % function_name, result)
+        except Exception as e:
+            print("%s call failed" % function_name)
+            print(e)
 
 
 if __name__ == '__main__':
