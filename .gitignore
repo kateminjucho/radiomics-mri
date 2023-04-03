@@ -2,6 +2,9 @@
 __pycache__/
 *.py[cod]
 *$py.class
+AM002_20220812_3691639/
+.DS_Store
+.idea
 
 # C extensions
 *.so
