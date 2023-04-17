@@ -2,7 +2,6 @@
 File: main.py
 Project: radiomics-mri
 File Created: 2023-04-03 19:56:55
-Author: sangminlee
 -----
 This script ...
 Reference
@@ -22,6 +21,8 @@ import cv2
 from skimage.segmentation import slic, mark_boundaries
 import matplotlib.pyplot as plt
 from sklearn.cluster import DBSCAN, SpectralClustering
+import pandas as pd
+import re
 
 
 def slic_mri(np_img: np.ndarray, num_of_segment: int, compactness: float):
@@ -30,8 +31,8 @@ def slic_mri(np_img: np.ndarray, num_of_segment: int, compactness: float):
     # equalized = cv2.equalizeHist(bilateralled[:, :, 0])
     # filtered = cv2.pyrMeanShiftFiltering(bilateralled, 5, 2)
     segments = slic(bilateralled, num_of_segment, convert2lab=True, compactness=compactness)
-    # f = mark_boundaries(rgb_img, segments, mode='subpixel')
-    # Image.fromarray(np.uint8(f * 255)).save('./%d_%d.png' % (num_of_segment, int(compactness)))
+    f = mark_boundaries(rgb_img, segments, mode='subpixel')
+    Image.fromarray(np.uint8(f * 255)).save('./cmc_slic/%d_%d.png' % (num_of_segment, int(compactness)))
     mean_list = []
     std_list = []
     x_list = []
@@ -54,53 +55,64 @@ def slic_mri(np_img: np.ndarray, num_of_segment: int, compactness: float):
 
 
 def get_data(n, return_np_array: bool = False):
-    standard_path = sorted(glob.glob("./AM002_20220812_3691639/standard/*/*.dcm"))
-    swift_path = sorted(glob.glob("./AM002_20220812_3691639/swift/*/*.dcm"))
-    swift_recon_low_path = sorted(glob.glob("./AM002_20220812_3691639/swift_recon_low/*/*.dcm"))
-    swift_recon_medium_path = sorted(glob.glob("./AM002_20220812_3691639/swift_recon_medium/*/*.dcm"))
+    # standard_path = sorted(glob.glob("./AM002_20220812_3691639/standard/*/*.dcm"))
+    # swift_path = sorted(glob.glob("./AM002_20220812_3691639/swift/*/*.dcm"))
+    # swift_recon_low_path = sorted(glob.glob("./AM002_20220812_3691639/swift_recon_low/*/*.dcm"))
+    # swift_recon_medium_path = sorted(glob.glob("./AM002_20220812_3691639/swift_recon_medium/*/*.dcm"))
+    standard_path = sorted(glob.glob("/Volumes/AIRS_CR6/cmc_s_knee/standard/115/*/*.dcm"))
+    recon_path = sorted(glob.glob("/Volumes/AIRS_CR6/cmc_s_knee/recon_M/115/*/*.dcm"))
 
     standard_img = norm_dcm_array(img_to_array(standard_path[n]))
-    swift_img = norm_dcm_array(img_to_array(swift_path[n]))
-    swift_recon_low_img = norm_dcm_array(img_to_array(swift_recon_low_path[n]))
-    swift_recon_medium_img = norm_dcm_array(img_to_array(swift_recon_medium_path[n]))
+    recon_img = norm_dcm_array(img_to_array(recon_path[n]))
+    # swift_img = norm_dcm_array(img_to_array(swift_path[n]))
+    # swift_recon_low_img = norm_dcm_array(img_to_array(swift_recon_low_path[n]))
+    # swift_recon_medium_img = norm_dcm_array(img_to_array(swift_recon_medium_path[n]))
     if return_np_array:
-        return standard_img, swift_img, swift_recon_low_img, swift_recon_medium_img
+        # return standard_img, swift_img, swift_recon_low_img, swift_recon_medium_img
+        return standard_img, recon_img
 
     standard_img = sitk.GetImageFromArray(standard_img)
-    swift_img = sitk.GetImageFromArray(swift_img)
-    swift_recon_low_img = sitk.GetImageFromArray(swift_recon_low_img)
-    swift_recon_medium_img = sitk.GetImageFromArray(swift_recon_medium_img)
+    recon_img = sitk.GetImageFromArray(recon_img)
+    # swift_img = sitk.GetImageFromArray(swift_img)
+    # swift_recon_low_img = sitk.GetImageFromArray(swift_recon_low_img)
+    # swift_recon_medium_img = sitk.GetImageFromArray(swift_recon_medium_img)
 
-    return standard_img, swift_img, swift_recon_low_img, swift_recon_medium_img
+    # return standard_img, swift_img, swift_recon_low_img, swift_recon_medium_img
+    return standard_img, recon_img
 
 
-def test_auto_seg():
-    for m in range(50):
-        standard_img, swift_img, swift_recon_low_img, swift_recon_medium_img = get_data(m, True)
-        pred, segments = slic_mri(standard_img, 64 * 64, 10)
+def test_auto_seg(idx):
+    # for m in range(50):
+    # standard_img, swift_img, swift_recon_low_img, swift_recon_medium_img = get_data(idx, True)
+    standard_img, recon_img = get_data(idx, True)
+    # imgs = [standard_img, swift_img, swift_recon_low_img, swift_recon_medium_img]
+    imgs = [standard_img, recon_img]
+    result = []
+    for index in range(len(imgs)):
+        img = imgs[index]
+        pred, segments = slic_mri(img, 64 * 64, 10)
         for i in range(pred.min(), pred.max() + 1):
             mask = np.zeros([512, 512, 3]).astype(np.uint8)
             for n in range(segments.min(), segments.max() + 1):
                 if pred[n - 1] != i:
                     continue
                 mask[np.where(segments == n)[0], np.where(segments == n)[1]] = [255, 0, 0]
-            Image.blend(Image.fromarray(standard_img).convert('RGBA'), Image.fromarray(mask).convert('RGBA'), 0.3).save(
-                './mask_%d_%d.png' % (m, i))
-    return
+            Image.blend(Image.fromarray(img).convert('RGBA'), Image.fromarray(mask).convert('RGBA'), 0.3).save(
+                './cmc_seg/%d_mask_%d_%d.png' % (index, idx, i))
+        result.append(mask)
+    return result
 
+def calculate_radiomics_features(img, mask):
+    function_name_all = []
+    result_all = []
 
-def test_grad_cam():
-    test_grad_cam()
-    standard_img, swift_img, swift_recon_low_img, swift_recon_medium_img = get_data(0)
+    mask = mask[:, :, 0] / 255
+    mask = sitk.GetImageFromArray(mask)
 
-    temporary_mask = np.zeros([512, 512]).astype(np.uint8)
-    temporary_mask[200:250, 200:250] = 1
-    temporary_mask = sitk.GetImageFromArray(temporary_mask)
-
-    features = RadiomicsFirstOrder(standard_img, temporary_mask)
-    # features = RadiomicsGLCM(standard_img, temporary_mask)
-    # features = RadiomicsGLDM(standard_img, temporary_mask)
-    # features = RadiomicsShape2D(standard_img, temporary_mask)
+    # features = RadiomicsFirstOrder(img, mask)
+    # features = RadiomicsGLCM(img, mask)
+    # features = RadiomicsGLDM(img, mask)
+    features = RadiomicsShape2D(img, mask)
 
     if type(features) in [RadiomicsFirstOrder, RadiomicsGLCM, RadiomicsGLDM]:
         features._initCalculation()
@@ -117,15 +129,91 @@ def test_grad_cam():
         function = getattr(features, function_name)
         try:
             result = function()
-            print('%s Results: ' % function_name, result)
+            # print('%s Results: ' % function_name, result)
+            function_name_all.append(function_name)
+            result_all.append(result)
         except Exception as e:
             print("%s call failed" % function_name)
             print(e)
+    return function_name_all, result_all
 
+def extract_number(s):
+    # Extract the number from a string
+    if isinstance(s, str):
+        number = re.findall(r"[-+]?\d*\.\d+|\d+", s)
+        return float(number[0]) if number else None
+    return s
+
+def calculate_std(csv_path):
+    std_csv_path = "./cmc_results/Shape2D_std.csv" # output path
+
+    df = pd.read_csv(csv_path)
+
+    # Convert the values in the 'Standard', 'Swift', 'Recon_L', and 'Recon_M' columns to numeric data types
+    for column in ["Standard", "Swift", "Recon_L", "Recon_M"]:
+        df[column] = df[column].apply(extract_number)
+
+    # Compute the standard deviation for each function result
+    function_names = df["Function"].unique()
+    results_columns = ["Standard", "Swift", "Recon_L", "Recon_M"]
+
+    # Store standard deviation metrics
+    standard_deviations_data = []
+
+    for function_name in function_names:
+        function_data = df[df["Function"] == function_name]
+        standard_deviations = function_data[results_columns].std()
+        standard_deviations_data.append((function_name,) + tuple(standard_deviations.tolist()))
+
+    # Create a new DataFrame with the standard deviation metrics
+    columns = [
+        "Function",
+        "Std dev Standard",
+        "Std dev Swift",
+        "Std dev Recon_L",
+        "Std dev Recon_M"
+    ]
+    standard_deviations_df = pd.DataFrame(standard_deviations_data, columns=columns)
+
+    standard_deviations_df.to_csv(std_csv_path, index=False)
+
+def analyze_radiomics():
+    csv_path = "./cmc_results/Shape2D.csv"
+
+    data = []
+    for idx in range(10):
+        # standard_img, swift_img, swift_recon_low_img, swift_recon_medium_img = get_data(idx)
+        standard_img, recon_img = get_data(idx)
+
+        # temporary_mask = np.zeros([512, 512]).astype(np.uint8)
+        # temporary_mask[200:250, 200:250] = 1
+
+        result = test_auto_seg(idx)
+
+        standard_function, standard_result = calculate_radiomics_features(standard_img, result[0])
+        _, recon_result = calculate_radiomics_features(recon_img, result[1])
+        # _, swift_result = calculate_radiomics_features(swift_img, result[1])
+        # _, swift_recon_low_result = calculate_radiomics_features(swift_recon_low_img, result[2])
+        # _, swift_recon_medium_result = calculate_radiomics_features(swift_recon_medium_img, result[3])
+
+        # result_values = [standard_result, swift_result, swift_recon_low_result, swift_recon_medium_result]
+        result_values = [standard_result, recon_result]
+
+        for function_num, function_name in enumerate(standard_function):
+            results = [result_values[i][function_num] for i in range(len(result_values))]
+            row = [idx, function_name] + results
+            data.append(row)
+
+    # columns = ["Index", "Function", "Standard", "Swift", "Recon_L", "Recon_M"]
+    columns = ["Index", "Function", "Standard", "Recon"]
+    df = pd.DataFrame(data, columns=columns)
+
+    df.to_csv(csv_path, index=False)
+
+    calculate_std(csv_path)
 
 def main():
-    # test_grad_cam()
-    test_auto_seg()
+    analyze_radiomics()
 
 
 if __name__ == '__main__':
