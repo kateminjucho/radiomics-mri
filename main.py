@@ -23,6 +23,7 @@ import matplotlib.pyplot as plt
 from sklearn.cluster import DBSCAN, SpectralClustering
 import pandas as pd
 import re
+from tqdm import tqdm
 
 DATA_TYPE = 'cmc'
 
@@ -120,18 +121,14 @@ def test_auto_seg(np_img: np.ndarray, save_path: str = None):
     return final_mask
 
 
-def calculate_radiomics_features(img, mask):
+def calculate_radiomics_features(img, mask, class_features):
     function_name_all = []
     result_all = []
 
     mask = mask // 255
     mask = sitk.GetImageFromArray(mask)
 
-    # features = RadiomicsFirstOrder(img, mask)
-    # features = RadiomicsGLCM(img, mask)
-    # features = RadiomicsGLDM(img, mask)
-    features = RadiomicsShape2D(img, mask)
-
+    features = class_features(img, mask)
     if type(features) in [RadiomicsFirstOrder, RadiomicsGLCM, RadiomicsGLDM]:
         features._initCalculation()
 
@@ -165,7 +162,7 @@ def extract_number(s):
 
 
 def calculate_std(csv_path):
-    std_csv_path = "./%s_results/Shape2D_std.csv" % DATA_TYPE  # output path
+    std_csv_path = csv_path.replace('.csv', '_std.csv')  # output path
 
     df = pd.read_csv(csv_path)
 
@@ -204,40 +201,42 @@ def calculate_std(csv_path):
 
 
 def analyze_radiomics():
-    csv_path = "./%s_results/Shape2D.csv" % DATA_TYPE
+    feature_list = [RadiomicsFirstOrder, RadiomicsGLCM, RadiomicsGLDM, RadiomicsShape2D]
+    for feature in feature_list:
+        data = []
+        feature_name = str(RadiomicsGLCM).split("'")[1].split('.')[-1]
+        csv_path = "./%s_results/%s.csv" % (DATA_TYPE, feature_name)
+        for idx in tqdm(range(96)):
+            # standard_img, swift_img, swift_recon_low_img, swift_recon_medium_img = get_data(idx)
+            standard_img, recon_img, standard_img_npy, recon_img_npy = get_data(idx)
 
-    data = []
-    for idx in range(10):
-        # standard_img, swift_img, swift_recon_low_img, swift_recon_medium_img = get_data(idx)
-        standard_img, recon_img, standard_img_npy, recon_img_npy = get_data(idx)
+            # temporary_mask = np.zeros([512, 512]).astype(np.uint8)
+            # temporary_mask[200:250, 200:250] = 1
 
-        # temporary_mask = np.zeros([512, 512]).astype(np.uint8)
-        # temporary_mask[200:250, 200:250] = 1
+            standard_img_mask = test_auto_seg(standard_img_npy, '%s_seg/%03d_standard_mask.png' % (DATA_TYPE, idx))
+            recon_img_mask = test_auto_seg(recon_img_npy, '%s_seg/%03d_recon_mask.png' % (DATA_TYPE, idx))
 
-        standard_img_mask = test_auto_seg(standard_img_npy, '%s_seg/%03d_standard_mask.png' % (DATA_TYPE, idx))
-        recon_img_mask = test_auto_seg(recon_img_npy, '%s_seg/%03d_recon_mask.png' % (DATA_TYPE, idx))
+            standard_function, standard_result = calculate_radiomics_features(standard_img, standard_img_mask, feature)
+            _, recon_result = calculate_radiomics_features(recon_img, recon_img_mask, feature)
+            # _, swift_result = calculate_radiomics_features(swift_img, result[1])
+            # _, swift_recon_low_result = calculate_radiomics_features(swift_recon_low_img, result[2])
+            # _, swift_recon_medium_result = calculate_radiomics_features(swift_recon_medium_img, result[3])
 
-        standard_function, standard_result = calculate_radiomics_features(standard_img, standard_img_mask)
-        _, recon_result = calculate_radiomics_features(recon_img, recon_img_mask)
-        # _, swift_result = calculate_radiomics_features(swift_img, result[1])
-        # _, swift_recon_low_result = calculate_radiomics_features(swift_recon_low_img, result[2])
-        # _, swift_recon_medium_result = calculate_radiomics_features(swift_recon_medium_img, result[3])
+            # result_values = [standard_result, swift_result, swift_recon_low_result, swift_recon_medium_result]
+            result_values = [standard_result, recon_result]
 
-        # result_values = [standard_result, swift_result, swift_recon_low_result, swift_recon_medium_result]
-        result_values = [standard_result, recon_result]
+            for function_num, function_name in enumerate(standard_function):
+                results = [result_values[i][function_num] for i in range(len(result_values))]
+                row = [idx, function_name] + results
+                data.append(row)
 
-        for function_num, function_name in enumerate(standard_function):
-            results = [result_values[i][function_num] for i in range(len(result_values))]
-            row = [idx, function_name] + results
-            data.append(row)
+        # columns = ["Index", "Function", "Standard", "Swift", "Recon_L", "Recon_M"]
+        columns = ["Index", "Function", "Standard", "Recon"]
+        df = pd.DataFrame(data, columns=columns)
 
-    # columns = ["Index", "Function", "Standard", "Swift", "Recon_L", "Recon_M"]
-    columns = ["Index", "Function", "Standard", "Recon"]
-    df = pd.DataFrame(data, columns=columns)
+        df.to_csv(csv_path, index=False)
 
-    df.to_csv(csv_path, index=False)
-
-    calculate_std(csv_path)
+        calculate_std(csv_path)
 
 
 def main():
