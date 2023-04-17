@@ -63,7 +63,7 @@ def get_data(n, return_np_array: bool = False):
     recon_path = sorted(glob.glob("./cmc_knee/recon_M/115/*/*.dcm"))
 
     standard_img = norm_dcm_array((img_to_array(standard_path[n])))
-    recon_img = norm_dcm_array(np.resize(img_to_array(recon_path[n]), (512, 512)))
+    recon_img = norm_dcm_array((img_to_array(recon_path[n])))
     # swift_img = norm_dcm_array(img_to_array(swift_path[n]))
     # swift_recon_low_img = norm_dcm_array(img_to_array(swift_recon_low_path[n]))
     # swift_recon_medium_img = norm_dcm_array(img_to_array(swift_recon_medium_path[n]))
