@@ -59,11 +59,11 @@ def get_data(n, return_np_array: bool = False):
     # swift_path = sorted(glob.glob("./AM002_20220812_3691639/swift/*/*.dcm"))
     # swift_recon_low_path = sorted(glob.glob("./AM002_20220812_3691639/swift_recon_low/*/*.dcm"))
     # swift_recon_medium_path = sorted(glob.glob("./AM002_20220812_3691639/swift_recon_medium/*/*.dcm"))
-    standard_path = sorted(glob.glob("/Volumes/AIRS_CR6/cmc_s_knee/standard/115/*/*.dcm"))
-    recon_path = sorted(glob.glob("/Volumes/AIRS_CR6/cmc_s_knee/recon_M/115/*/*.dcm"))
+    standard_path = sorted(glob.glob("./cmc_knee/standard/115/*/*.dcm"))
+    recon_path = sorted(glob.glob("./cmc_knee/recon_M/115/*/*.dcm"))
 
-    standard_img = norm_dcm_array(img_to_array(standard_path[n]))
-    recon_img = norm_dcm_array(img_to_array(recon_path[n]))
+    standard_img = norm_dcm_array((img_to_array(standard_path[n])))
+    recon_img = norm_dcm_array(np.resize(img_to_array(recon_path[n]), (512, 512)))
     # swift_img = norm_dcm_array(img_to_array(swift_path[n]))
     # swift_recon_low_img = norm_dcm_array(img_to_array(swift_recon_low_path[n]))
     # swift_recon_medium_img = norm_dcm_array(img_to_array(swift_recon_medium_path[n]))
@@ -149,29 +149,34 @@ def calculate_std(csv_path):
 
     df = pd.read_csv(csv_path)
 
-    # Convert the values in the 'Standard', 'Swift', 'Recon_L', and 'Recon_M' columns to numeric data types
-    for column in ["Standard", "Swift", "Recon_L", "Recon_M"]:
+    # Convert the values in the columns to numeric data types
+    for column in ["Standard", "Recon"]:
         df[column] = df[column].apply(extract_number)
 
     # Compute the standard deviation for each function result
     function_names = df["Function"].unique()
-    results_columns = ["Standard", "Swift", "Recon_L", "Recon_M"]
+    results_columns = ["Standard", "Recon"]
 
     # Store standard deviation metrics
     standard_deviations_data = []
 
     for function_name in function_names:
         function_data = df[df["Function"] == function_name]
-        standard_deviations = function_data[results_columns].std()
-        standard_deviations_data.append((function_name,) + tuple(standard_deviations.tolist()))
+        means = function_data[results_columns].mean()
+        std_devs = function_data[results_columns].std()
+        std_dev_percentages = (std_devs / means) * 100
+        std_dev_and_percentages = tuple(
+            [val for pair in zip(std_devs.tolist(), std_dev_percentages.tolist()) for val in pair]
+        )
+        standard_deviations_data.append((function_name,) + std_dev_and_percentages)
 
     # Create a new DataFrame with the standard deviation metrics
     columns = [
         "Function",
         "Std dev Standard",
-        "Std dev Swift",
-        "Std dev Recon_L",
-        "Std dev Recon_M"
+        "Std dev % Standard",
+        "Std dev Recon",
+        "Std dev % Recon",
     ]
     standard_deviations_df = pd.DataFrame(standard_deviations_data, columns=columns)
 
@@ -213,7 +218,8 @@ def analyze_radiomics():
     calculate_std(csv_path)
 
 def main():
-    analyze_radiomics()
+    # analyze_radiomics()
+    calculate_std("./cmc_results/Shape2D.csv")
 
 
 if __name__ == '__main__':
