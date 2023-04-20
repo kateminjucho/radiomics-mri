@@ -204,7 +204,7 @@ def analyze_radiomics():
     feature_list = [RadiomicsFirstOrder, RadiomicsGLCM, RadiomicsGLDM, RadiomicsShape2D]
     for feature in feature_list:
         data = []
-        feature_name = str(RadiomicsGLCM).split("'")[1].split('.')[-1]
+        feature_name = str(feature).split("'")[1].split('.')[-1]
         csv_path = "./%s_results/%s.csv" % (DATA_TYPE, feature_name)
         for idx in tqdm(range(96)):
             # standard_img, swift_img, swift_recon_low_img, swift_recon_medium_img = get_data(idx)
