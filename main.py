@@ -441,7 +441,7 @@ def regression_test():
     swift_pearson = np.array(swift_pearson)
     recon_l_pearson = np.array(recon_l_pearson)
     recon_m_pearson = np.array(recon_m_pearson)
-    total_pearson = standard_pearson + standard_pearson + recon_l_pearson + recon_m_pearson
+    total_pearson = standard_pearson + swift_pearson + recon_l_pearson + recon_m_pearson
     pearson_arg_sort = np.argsort(total_pearson)[::-1]
 
     for selected_feature_num in range(10, 20):
@@ -471,25 +471,36 @@ def regression_test():
         print('mse_swift: ', mean_squared_error(y, y_swift))
         print('mse_recon_l: ', mean_squared_error(y, y_recon_l))
         print('mse_recon_m: ', mean_squared_error(y, y_recon_m))
+
+        n = 5
+        top_n_error_index = np.argsort(np.abs(y - y_recon_l))[::-1][:n]
+
         fig = plt.figure()
         plt.scatter(np.ones(45), np.sqrt(np.square(y - y_standard)), alpha=0.2, color='black')
+        plt.scatter(np.ones(n), np.sqrt(np.square(y - y_standard))[top_n_error_index], alpha=0.5, color='red')
         plt.scatter(1, np.mean(np.sqrt(np.square(y - y_standard))), alpha=1., marker='*', color='red', edgecolors='red')
         plt.plot(np.ones(2), [np.mean(np.sqrt(np.square(y - y_standard))) - np.std(np.sqrt(np.square(y - y_standard))),
                               np.mean(np.sqrt(np.square(y - y_standard))) + np.std(np.sqrt(np.square(y - y_standard)))],
                  color='red')
+
         plt.scatter(np.ones(45) * 2, np.sqrt(np.square(y - y_swift)), alpha=0.2, color='yellow')
+        plt.scatter(np.ones(n) * 2, np.sqrt(np.square(y - y_swift))[top_n_error_index], alpha=0.5, color='red')
         plt.scatter(2, np.mean(np.sqrt(np.square(y - y_swift))), alpha=1., marker='*', color='red', edgecolors='black')
         plt.plot(np.ones(2) * 2, [np.mean(np.sqrt(np.square(y - y_swift))) - np.std(np.sqrt(np.square(y - y_swift))),
                                   np.mean(np.sqrt(np.square(y - y_swift))) + np.std(np.sqrt(np.square(y - y_swift)))],
                  color='red')
+
         plt.scatter(np.ones(45) * 3, np.sqrt(np.square(y - y_recon_l)), alpha=0.2, color='blue')
+        plt.scatter(np.ones(n) * 3, np.sqrt(np.square(y - y_recon_l))[top_n_error_index], alpha=0.5, color='red')
         plt.scatter(3, np.mean(np.sqrt(np.square(y - y_recon_l))), alpha=1., marker='*', color='red',
                     edgecolors='black')
         plt.plot(np.ones(2) * 3,
                  [np.mean(np.sqrt(np.square(y - y_recon_l))) - np.std(np.sqrt(np.square(y - y_recon_l))),
                   np.mean(np.sqrt(np.square(y - y_recon_l))) + np.std(np.sqrt(np.square(y - y_recon_l)))],
                  color='red')
+
         plt.scatter(np.ones(45) * 4, np.sqrt(np.square(y - y_recon_m)), alpha=0.2, color='green')
+        plt.scatter(np.ones(n) * 4, np.sqrt(np.square(y - y_recon_m))[top_n_error_index], alpha=0.5, color='red')
         plt.scatter(4, np.mean(np.sqrt(np.square(y - y_recon_m))), alpha=1., marker='*', color='red',
                     edgecolors='black')
         plt.plot(np.ones(2) * 4,
