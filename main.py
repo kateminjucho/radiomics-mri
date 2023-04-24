@@ -8,6 +8,7 @@ Reference
 ...
 '''
 import glob
+from scipy.stats import pearsonr
 from PIL import Image
 from utils import norm_dcm_array, img_to_array
 import radiomics
@@ -366,16 +367,17 @@ def regression_test():
     subject_num = 45
     radiomics_feature_list = [('RadiomicsFirstOrder', 19), ('RadiomicsGLCM', 24), ('RadiomicsGLRLM', 16),
                               ('RadiomicsGLSZM', 16), ('RadiomicsNGTDM', 5), ('RadiomicsGLDM', 14)]
+    standard_arrays = []
+    swift_arrays = []
+    recon_l_arrays = []
+    recon_m_arrays = []
     for radiomics_feature, feature_num in radiomics_feature_list:
-        print(radiomics_feature)
-        df = pd.read_csv('results/%s.csv' % radiomics_feature)
-        # feature_num = 16
         standard_features = []
         swift_features = []
         recon_l_features = []
         recon_m_features = []
+        df = pd.read_csv('results/%s.csv' % radiomics_feature)
         for sub_idx in range(subject_num):
-            print(sub_idx)
             tmp_standard_features = []
             tmp_swift_features = []
             tmp_recon_l_features = []
@@ -407,69 +409,101 @@ def regression_test():
             recon_l_features.append(tmp_recon_l_features)
             recon_m_features.append(tmp_recon_m_features)
 
-    standard_x = np.array(standard_features)
-    swift_x = np.array(swift_features)
-    recon_l_x = np.array(recon_l_features)
-    recon_m_x = np.array(recon_m_features)
+        standard_arrays.append(standard_features)
+        swift_arrays.append(swift_features)
+        recon_l_arrays.append(recon_l_features)
+        recon_m_arrays.append(recon_m_features)
+    standard_x = np.concatenate(standard_arrays, axis=1)
+    swift_x = np.concatenate(swift_arrays, axis=1)
+    recon_l_x = np.concatenate(recon_l_arrays, axis=1)
+    recon_m_x = np.concatenate(recon_m_arrays, axis=1)
     total_x = np.concatenate([standard_x, swift_x, recon_l_x, recon_m_x], axis=0)
-
-    # get mean and std of total_x
-    mean = np.mean(total_x, axis=0)
-    std = np.std(total_x, axis=0)
-
-    standard_x = (standard_x - mean) / std
-    swift_x = (swift_x - mean) / std
-    recon_l_x = (recon_l_x - mean) / std
-    recon_m_x = (recon_m_x - mean) / std
+    # normalize each x
+    standard_x = (standard_x - np.mean(total_x, axis=0)) / np.std(total_x, axis=0)
+    swift_x = (swift_x - np.mean(total_x, axis=0)) / np.std(total_x, axis=0)
+    recon_l_x = (recon_l_x - np.mean(total_x, axis=0)) / np.std(total_x, axis=0)
+    recon_m_x = (recon_m_x - np.mean(total_x, axis=0)) / np.std(total_x, axis=0)
 
     df = pd.read_excel('./results/age_gt.xlsx')
     y = np.array(list(df.iloc[2:47]['Unnamed: 3']))
 
-    reg_standard = LinearRegression().fit(standard_x, y)
-    print('standard: ', reg_standard.score(standard_x, y))
-    reg_swift = LinearRegression().fit(swift_x, y)
-    print('swift: ', reg_swift.score(swift_x, y))
-    reg_recon_l = LinearRegression().fit(recon_l_x, y)
-    print('recon_l: ', reg_recon_l.score(recon_l_x, y))
-    reg_recon_m = LinearRegression().fit(recon_m_x, y)
-    print('recon_m: ', reg_recon_m.score(recon_m_x, y))
+    standard_pearson = []
+    swift_pearson = []
+    recon_l_pearson = []
+    recon_m_pearson = []
+    for i in range(standard_x.shape[1]):
+        standard_pearson.append(abs(pearsonr(standard_x[:, i], y)[0]))
+        swift_pearson.append(abs(pearsonr(swift_x[:, i], y)[0]))
+        recon_l_pearson.append(abs(pearsonr(recon_l_x[:, i], y)[0]))
+        recon_m_pearson.append(abs(pearsonr(recon_m_x[:, i], y)[0]))
 
-    y_standard = reg_standard.predict(standard_x)
-    y_swift = reg_swift.predict(swift_x)
-    y_recon_l = reg_recon_l.predict(recon_l_x)
-    y_recon_m = reg_recon_m.predict(recon_m_x)
+    standard_pearson = np.array(standard_pearson)
+    swift_pearson = np.array(swift_pearson)
+    recon_l_pearson = np.array(recon_l_pearson)
+    recon_m_pearson = np.array(recon_m_pearson)
+    total_pearson = standard_pearson + standard_pearson + recon_l_pearson + recon_m_pearson
+    pearson_arg_sort = np.argsort(total_pearson)[::-1]
 
-    print('mse_standard: ', mean_squared_error(y, y_standard))
-    print('mse_swift: ', mean_squared_error(y, y_swift))
-    print('mse_recon_l: ', mean_squared_error(y, y_recon_l))
-    print('mse_recon_m: ', mean_squared_error(y, y_recon_m))
-    fig = plt.figure()
-    plt.scatter(np.ones(45), np.sqrt(np.square(y - y_standard)), alpha=0.2, color='black')
-    plt.scatter(1, np.mean(np.sqrt(np.square(y - y_standard))), alpha=1., marker='*', color='red', edgecolors='red')
-    plt.plot(np.ones(2), [np.mean(np.sqrt(np.square(y - y_standard))) - np.std(np.sqrt(np.square(y - y_standard))),
-                          np.mean(np.sqrt(np.square(y - y_standard))) + np.std(np.sqrt(np.square(y - y_standard)))],
-             color='red')
-    plt.scatter(np.ones(45) * 2, np.sqrt(np.square(y - y_swift)), alpha=0.2, color='yellow')
-    plt.scatter(2, np.mean(np.sqrt(np.square(y - y_swift))), alpha=1., marker='*', color='red', edgecolors='black')
-    plt.plot(np.ones(2) * 2, [np.mean(np.sqrt(np.square(y - y_swift))) - np.std(np.sqrt(np.square(y - y_swift))),
-                              np.mean(np.sqrt(np.square(y - y_swift))) + np.std(np.sqrt(np.square(y - y_swift)))],
-             color='red')
-    plt.scatter(np.ones(45) * 3, np.sqrt(np.square(y - y_recon_l)), alpha=0.2, color='blue')
-    plt.scatter(3, np.mean(np.sqrt(np.square(y - y_recon_l))), alpha=1., marker='*', color='red', edgecolors='black')
-    plt.plot(np.ones(2) * 3, [np.mean(np.sqrt(np.square(y - y_recon_l))) - np.std(np.sqrt(np.square(y - y_recon_l))),
-                              np.mean(np.sqrt(np.square(y - y_recon_l))) + np.std(np.sqrt(np.square(y - y_recon_l)))],
-             color='red')
-    plt.scatter(np.ones(45) * 4, np.sqrt(np.square(y - y_recon_m)), alpha=0.2, color='green')
-    plt.scatter(4, np.mean(np.sqrt(np.square(y - y_recon_m))), alpha=1., marker='*', color='red', edgecolors='black')
-    plt.plot(np.ones(2) * 4, [np.mean(np.sqrt(np.square(y - y_recon_m))) - np.std(np.sqrt(np.square(y - y_recon_m))),
-                              np.mean(np.sqrt(np.square(y - y_recon_m))) + np.std(np.sqrt(np.square(y - y_recon_m)))],
-             color='red')
-    fig.savefig('./scatter.png')
-    import scipy.stats as stats
-    t_stat, p_val = stats.ttest_ind(np.sqrt(np.square(y - y_standard)), np.sqrt(np.square(y - y_recon_l)),
-                                    equal_var=False)
-    print('p-value is ', p_val)
-    pass
+    for selected_feature_num in range(10, 20):
+        # selected_feature_num = 10
+        print('--------------------------------------------------')
+        print('Selected feature nums is %d' % selected_feature_num)
+        selected_standard_x = standard_x[:, pearson_arg_sort[:selected_feature_num]]
+        selected_swift_x = swift_x[:, pearson_arg_sort[:selected_feature_num]]
+        selected_recon_l_x = recon_l_x[:, pearson_arg_sort[:selected_feature_num]]
+        selected_recon_m_x = recon_m_x[:, pearson_arg_sort[:selected_feature_num]]
+
+        reg_standard = LinearRegression().fit(selected_standard_x, y)
+        print('standard: ', reg_standard.score(selected_standard_x, y))
+        reg_swift = LinearRegression().fit(selected_swift_x, y)
+        print('swift: ', reg_swift.score(selected_swift_x, y))
+        reg_recon_l = LinearRegression().fit(selected_recon_l_x, y)
+        print('recon_l: ', reg_recon_l.score(selected_recon_l_x, y))
+        reg_recon_m = LinearRegression().fit(selected_recon_m_x, y)
+        print('recon_m: ', reg_recon_m.score(selected_recon_m_x, y))
+
+        y_standard = reg_standard.predict(selected_standard_x)
+        y_swift = reg_swift.predict(selected_swift_x)
+        y_recon_l = reg_recon_l.predict(selected_recon_l_x)
+        y_recon_m = reg_recon_m.predict(selected_recon_m_x)
+
+        print('mse_standard: ', mean_squared_error(y, y_standard))
+        print('mse_swift: ', mean_squared_error(y, y_swift))
+        print('mse_recon_l: ', mean_squared_error(y, y_recon_l))
+        print('mse_recon_m: ', mean_squared_error(y, y_recon_m))
+        fig = plt.figure()
+        plt.scatter(np.ones(45), np.sqrt(np.square(y - y_standard)), alpha=0.2, color='black')
+        plt.scatter(1, np.mean(np.sqrt(np.square(y - y_standard))), alpha=1., marker='*', color='red', edgecolors='red')
+        plt.plot(np.ones(2), [np.mean(np.sqrt(np.square(y - y_standard))) - np.std(np.sqrt(np.square(y - y_standard))),
+                              np.mean(np.sqrt(np.square(y - y_standard))) + np.std(np.sqrt(np.square(y - y_standard)))],
+                 color='red')
+        plt.scatter(np.ones(45) * 2, np.sqrt(np.square(y - y_swift)), alpha=0.2, color='yellow')
+        plt.scatter(2, np.mean(np.sqrt(np.square(y - y_swift))), alpha=1., marker='*', color='red', edgecolors='black')
+        plt.plot(np.ones(2) * 2, [np.mean(np.sqrt(np.square(y - y_swift))) - np.std(np.sqrt(np.square(y - y_swift))),
+                                  np.mean(np.sqrt(np.square(y - y_swift))) + np.std(np.sqrt(np.square(y - y_swift)))],
+                 color='red')
+        plt.scatter(np.ones(45) * 3, np.sqrt(np.square(y - y_recon_l)), alpha=0.2, color='blue')
+        plt.scatter(3, np.mean(np.sqrt(np.square(y - y_recon_l))), alpha=1., marker='*', color='red',
+                    edgecolors='black')
+        plt.plot(np.ones(2) * 3,
+                 [np.mean(np.sqrt(np.square(y - y_recon_l))) - np.std(np.sqrt(np.square(y - y_recon_l))),
+                  np.mean(np.sqrt(np.square(y - y_recon_l))) + np.std(np.sqrt(np.square(y - y_recon_l)))],
+                 color='red')
+        plt.scatter(np.ones(45) * 4, np.sqrt(np.square(y - y_recon_m)), alpha=0.2, color='green')
+        plt.scatter(4, np.mean(np.sqrt(np.square(y - y_recon_m))), alpha=1., marker='*', color='red',
+                    edgecolors='black')
+        plt.plot(np.ones(2) * 4,
+                 [np.mean(np.sqrt(np.square(y - y_recon_m))) - np.std(np.sqrt(np.square(y - y_recon_m))),
+                  np.mean(np.sqrt(np.square(y - y_recon_m))) + np.std(np.sqrt(np.square(y - y_recon_m)))],
+                 color='red')
+        fig.savefig('./scatter_%d.png' % selected_feature_num)
+        import scipy.stats as stats
+        t_stat, p_val = stats.ttest_ind(np.sqrt(np.square(y - y_standard)), np.sqrt(np.square(y - y_recon_l)),
+                                        equal_var=False)
+        print('p-value with recon_l is ', p_val)
+        t_stat, p_val = stats.ttest_ind(np.sqrt(np.square(y - y_standard)), np.sqrt(np.square(y - y_recon_l)),
+                                        equal_var=False)
+        print('p-value with recon_m is ', p_val)
 
 
 def main():
