@@ -14,8 +14,11 @@ import radiomics
 import numpy as np
 from radiomics.firstorder import RadiomicsFirstOrder
 from radiomics.shape2D import RadiomicsShape2D
-from radiomics.gldm import RadiomicsGLDM
 from radiomics.glcm import RadiomicsGLCM
+from radiomics.glrlm import RadiomicsGLRLM
+from radiomics.glszm import RadiomicsGLSZM
+from radiomics.ngtdm import RadiomicsNGTDM
+from radiomics.gldm import RadiomicsGLDM
 import SimpleITK as sitk
 import cv2
 from skimage.segmentation import slic, mark_boundaries
@@ -23,8 +26,12 @@ import matplotlib.pyplot as plt
 from sklearn.cluster import DBSCAN, SpectralClustering
 import pandas as pd
 import re
+from tqdm import tqdm
+import copy
+import os
+import tempfile
 
-DATA_TYPE = 'cmc'
+DATA_TYPE = 'yuhs'
 
 
 def slic_mri(np_img: np.ndarray, num_of_segment: int, compactness: float, num_clusters: int = 16):
@@ -63,30 +70,6 @@ def slic_mri(np_img: np.ndarray, num_of_segment: int, compactness: float, num_cl
     return pred, segments
 
 
-def get_data(n):
-    # standard_path = sorted(glob.glob("./AM002_20220812_3691639/standard/*/*.dcm"))
-    # swift_path = sorted(glob.glob("./AM002_20220812_3691639/swift/*/*.dcm"))
-    # swift_recon_low_path = sorted(glob.glob("./AM002_20220812_3691639/swift_recon_low/*/*.dcm"))
-    # swift_recon_medium_path = sorted(glob.glob("./AM002_20220812_3691639/swift_recon_medium/*/*.dcm"))
-    standard_path = sorted(glob.glob("./%s_knee/standard/115/*/*.dcm" % DATA_TYPE))
-    recon_path = sorted(glob.glob("./%s_knee/recon_M/115/*/*.dcm" % DATA_TYPE))
-
-    standard_img_npy = norm_dcm_array((img_to_array(standard_path[n])))
-    recon_img_npy = norm_dcm_array((img_to_array(recon_path[n])))
-    # swift_img = norm_dcm_array(img_to_array(swift_path[n]))
-    # swift_recon_low_img = norm_dcm_array(img_to_array(swift_recon_low_path[n]))
-    # swift_recon_medium_img = norm_dcm_array(img_to_array(swift_recon_medium_path[n]))
-
-    standard_img = sitk.GetImageFromArray(standard_img_npy)
-    recon_img = sitk.GetImageFromArray(recon_img_npy)
-    # swift_img = sitk.GetImageFromArray(swift_img)
-    # swift_recon_low_img = sitk.GetImageFromArray(swift_recon_low_img)
-    # swift_recon_medium_img = sitk.GetImageFromArray(swift_recon_medium_img)
-
-    # return standard_img, swift_img, swift_recon_low_img, swift_recon_medium_img
-    return standard_img, recon_img, standard_img_npy, recon_img_npy
-
-
 def test_auto_seg(np_img: np.ndarray, save_path: str = None):
     # for m in range(50):
     height, width = np_img.shape
@@ -120,19 +103,45 @@ def test_auto_seg(np_img: np.ndarray, save_path: str = None):
     return final_mask
 
 
-def calculate_radiomics_features(img, mask):
+def get_data(n):
+    # standard_path = sorted(glob.glob("./AM002_20220812_3691639/standard/*/*.dcm"))
+    # swift_path = sorted(glob.glob("./AM002_20220812_3691639/swift/*/*.dcm"))
+    # swift_recon_low_path = sorted(glob.glob("./AM002_20220812_3691639/swift_recon_low/*/*.dcm"))
+    # swift_recon_medium_path = sorted(glob.glob("./AM002_20220812_3691639/swift_recon_medium/*/*.dcm"))
+    standard_path = sorted(glob.glob("./%s_knee_cor_bone_marrow/standard/*.dcm" % DATA_TYPE))
+    swift_path = sorted(glob.glob("./%s_knee_cor_bone_marrow/swift/*.dcm" % DATA_TYPE))
+    recon_low_path = sorted(glob.glob("./%s_knee_cor_bone_marrow/recon_low/*.dcm" % DATA_TYPE))
+    recon_med_path = sorted(glob.glob("./%s_knee_cor_bone_marrow/recon_med/*.dcm" % DATA_TYPE))
+
+    standard_img_npy = norm_dcm_array((img_to_array(standard_path[n])))
+    swift_img_npy = norm_dcm_array((img_to_array(swift_path[n])))
+    recon_low_img_npy = norm_dcm_array((img_to_array(recon_low_path[n])))
+    recon_med_img_npy = norm_dcm_array((img_to_array(recon_med_path[n])))
+    # swift_img = norm_dcm_array(img_to_array(swift_path[n]))
+    # swift_recon_low_img = norm_dcm_array(img_to_array(swift_recon_low_path[n]))
+    # swift_recon_medium_img = norm_dcm_array(img_to_array(swift_recon_medium_path[n]))
+
+    standard_img = sitk.GetImageFromArray(standard_img_npy)
+    swift_img = sitk.GetImageFromArray(swift_img_npy)
+    recon_low_img = sitk.GetImageFromArray(recon_low_img_npy)
+    recon_med_img = sitk.GetImageFromArray(recon_med_img_npy)
+    # swift_img = sitk.GetImageFromArray(swift_img)
+    # swift_recon_low_img = sitk.GetImageFromArray(swift_recon_low_img)
+    # swift_recon_medium_img = sitk.GetImageFromArray(swift_recon_medium_img)
+
+    # return standard_img, swift_img, swift_recon_low_img, swift_recon_medium_img
+    return standard_img, swift_img, recon_low_img, recon_med_img, standard_img_npy, swift_img_npy, recon_low_img_npy, recon_med_img_npy
+
+
+def calculate_radiomics_features(img, mask, class_features):
     function_name_all = []
     result_all = []
 
     mask = mask // 255
     mask = sitk.GetImageFromArray(mask)
 
-    # features = RadiomicsFirstOrder(img, mask)
-    # features = RadiomicsGLCM(img, mask)
-    # features = RadiomicsGLDM(img, mask)
-    features = RadiomicsShape2D(img, mask)
-
-    if type(features) in [RadiomicsFirstOrder, RadiomicsGLCM, RadiomicsGLDM]:
+    features = class_features(img, mask)
+    if type(features) in [RadiomicsFirstOrder, RadiomicsGLCM, RadiomicsGLRLM, RadiomicsGLSZM, RadiomicsNGTDM, RadiomicsGLDM]:
         features._initCalculation()
 
     available_function_list = [attr for attr in dir(features) if
@@ -165,17 +174,17 @@ def extract_number(s):
 
 
 def calculate_std(csv_path):
-    std_csv_path = "./%s_results/Shape2D_std.csv" % DATA_TYPE  # output path
+    std_csv_path = csv_path.replace('.csv', '_std.csv')  # output path
 
     df = pd.read_csv(csv_path)
 
     # Convert the values in the columns to numeric data types
-    for column in ["Standard", "Recon"]:
+    for column in ["Standard", "Swift", "Recon_L", "Recon_M"]:
         df[column] = df[column].apply(extract_number)
 
     # Compute the standard deviation for each function result
     function_names = df["Function"].unique()
-    results_columns = ["Standard", "Recon"]
+    results_columns = ["Standard", "Swift", "Recon_L", "Recon_M"]
 
     # Store standard deviation metrics
     standard_deviations_data = []
@@ -195,49 +204,141 @@ def calculate_std(csv_path):
         "Function",
         "Std dev Standard",
         "Std dev % Standard",
-        "Std dev Recon",
-        "Std dev % Recon",
+        "Std dev Swift",
+        "Std dev % Swift",
+        "Std dev Recon_L",
+        "Std dev % Recon_L",
+        "Std dev Recon_M",
+        "Std dev % Recon_M",
     ]
     standard_deviations_df = pd.DataFrame(standard_deviations_data, columns=columns)
 
     standard_deviations_df.to_csv(std_csv_path, index=False)
 
 
+def on_mouse(event, x, y, flags, param): # (x,y)의 (0,0)은 좌측 상단점 기준
+    global final_img, cache, point1, tissue_1_radius
+
+    if event == cv2.EVENT_LBUTTONDOWN: # 마우스 좌클릭 시 빨간색 원 그려짐
+        cache = copy.deepcopy(final_img)
+        point1.append((x, y))
+        cv2.circle(final_img, (x, y), tissue_1_radius, color=(0, 0, 255), thickness=-1)    # roi mask 1 생성
+        cv2.imshow('window', final_img)
+
+
+def get_roi(img_npy: np.ndarray, save_path: str = None, x_center: int = 0, y_center: int = 0, roi_exist: bool = False):
+    global final_img, cache, point1, tissue_1_radius
+
+    tissue_1_radius = img_npy.shape[0] // 16
+
+    if roi_exist:
+        tissue_x_center1 = x_center
+        tissue_y_center1 = y_center
+
+    else:
+
+        pil_img = Image.fromarray(img_npy)
+        with tempfile.NamedTemporaryFile(suffix=".png", delete=True) as temp_file:
+            pil_img.save(temp_file.name)
+            final_img = cv2.imread(temp_file.name)
+
+        point1 = []
+
+        cv2.namedWindow('window')
+        cv2.setMouseCallback('window', on_mouse, final_img)
+        cv2.imshow('window', final_img)
+        while True:
+            if cv2.waitKey(0) & 0xFF == 27:  # esc로 종료
+                print('ESC Pressed, the windows will closed')
+                cv2.destroyAllWindows()
+                break
+            elif cv2.waitKey(0) & 0xFF == 32: # spacebar 두 번 누르면 undo
+                final_img = copy.deepcopy(cache)
+                cv2.imshow('window', final_img)
+            else:
+                continue
+
+        # 좌표 저장
+
+        tissue_x_center1 = point1[0][0]
+        tissue_y_center1 = point1[0][1]
+        # tissue_point1 = list(set([(int(tissue_x_center1 + tissue_1_radius * np.cos(theta)),
+        #                            int(tissue_y_center1 + tissue_1_radius * np.sin(theta)))
+        #                           for theta in np.linspace(0, 2*np.pi, 360)]))
+
+        # tissue_pixel1 = []
+
+    mask = np.zeros_like((img_npy)).astype(np.uint8)
+    mask = cv2.circle(mask, (tissue_x_center1, tissue_y_center1), radius=tissue_1_radius, color=(255, 0, 0), thickness=-1)
+
+    # for i in range(0, len(tissue_point1)):
+    #     tissue_pixel1.append(img_npy[tissue_point1[i]])
+
+    if save_path is not None:
+        Image.blend(Image.fromarray(img_npy).convert('RGBA'), Image.fromarray(mask).convert('RGBA'), 0.3).save(
+            save_path)
+
+    return mask, tissue_x_center1, tissue_y_center1
+
 def analyze_radiomics():
-    csv_path = "./%s_results/Shape2D.csv" % DATA_TYPE
+    standard_x, standard_y, swift_x, swift_y, recon_low_x, recon_low_y, recon_med_x, recon_med_y = [], [], [], [], [], [], [], []
+    feature_list = [RadiomicsFirstOrder, RadiomicsShape2D, RadiomicsGLCM, RadiomicsGLRLM, RadiomicsGLSZM, RadiomicsNGTDM, RadiomicsGLDM]
+    for feature in feature_list:
+        data = []
+        feature_name = str(feature).split("'")[1].split('.')[-1]
+        csv_path = "./%s_radiomics/%s.csv" % (DATA_TYPE, feature_name)
+        for idx in tqdm(range(45)):
+            # standard_img, swift_img, swift_recon_low_img, swift_recon_medium_img = get_data(idx)
+            standard_img, swift_img, recon_low_img, recon_med_img, standard_img_npy, swift_img_npy, recon_low_img_npy, recon_med_img_npy = get_data(idx)
 
-    data = []
-    for idx in range(10):
-        # standard_img, swift_img, swift_recon_low_img, swift_recon_medium_img = get_data(idx)
-        standard_img, recon_img, standard_img_npy, recon_img_npy = get_data(idx)
+            # temporary_mask = np.zeros([512, 512]).astype(np.uint8)
+            # temporary_mask[200:250, 200:250] = 1
 
-        # temporary_mask = np.zeros([512, 512]).astype(np.uint8)
-        # temporary_mask[200:250, 200:250] = 1
+            try:
+                standard_img_mask, _, _ = get_roi(standard_img_npy, './%s_roi/%03d_standard_mask.png' % (DATA_TYPE, idx), standard_x[idx], standard_y[idx], True)
+                swift_img_mask, _, _ = get_roi(swift_img_npy, './%s_roi/%03d_swift_mask.png' % (DATA_TYPE, idx), swift_x[idx], swift_y[idx], True)
+                recon_low_img_mask, _, _ = get_roi(recon_low_img_npy, './%s_roi/%03d_recon_low_mask.png' % (DATA_TYPE, idx), recon_low_x[idx], recon_low_y[idx], True)
+                recon_med_img_mask, _, _ = get_roi(recon_med_img_npy, './%s_roi/%03d_recon_med_mask.png' % (DATA_TYPE, idx), recon_med_x[idx], recon_med_y[idx], True)
 
-        standard_img_mask = test_auto_seg(standard_img_npy, '%s_seg/%03d_standard_mask.png' % (DATA_TYPE, idx))
-        recon_img_mask = test_auto_seg(recon_img_npy, '%s_seg/%03d_recon_mask.png' % (DATA_TYPE, idx))
+            except:
+                standard_img_mask, st_x, st_y = get_roi(standard_img_npy, './%s_roi/%03d_standard_mask.png' % (DATA_TYPE, idx), 0, 0, False)
+                standard_x.append(st_x)
+                standard_y.append(st_y)
+                swift_img_mask, sw_x, sw_y = get_roi(swift_img_npy, './%s_roi/%03d_swift_mask.png' % (DATA_TYPE, idx), 0, 0, False)
+                swift_x.append(sw_x)
+                swift_y.append(sw_y)
+                recon_low_img_mask, rl_x, rl_y = get_roi(recon_low_img_npy, './%s_roi/%03d_recon_low_mask.png' % (DATA_TYPE, idx), 0, 0, False)
+                recon_low_x.append(rl_x)
+                recon_low_y.append(rl_y)
+                recon_med_img_mask, rm_x, rm_y = get_roi(recon_med_img_npy, './%s_roi/%03d_recon_med_mask.png' % (DATA_TYPE, idx), 0, 0, False)
+                recon_med_x.append(rm_x)
+                recon_med_y.append(rm_y)
 
-        standard_function, standard_result = calculate_radiomics_features(standard_img, standard_img_mask)
-        _, recon_result = calculate_radiomics_features(recon_img, recon_img_mask)
-        # _, swift_result = calculate_radiomics_features(swift_img, result[1])
-        # _, swift_recon_low_result = calculate_radiomics_features(swift_recon_low_img, result[2])
-        # _, swift_recon_medium_result = calculate_radiomics_features(swift_recon_medium_img, result[3])
+            # standard_img_mask = test_auto_seg(standard_img_npy, '%s_seg/%03d_standard_mask.png' % (DATA_TYPE, idx))
+            # recon_img_mask = test_auto_seg(recon_img_npy, '%s_seg/%03d_recon_mask.png' % (DATA_TYPE, idx))
 
-        # result_values = [standard_result, swift_result, swift_recon_low_result, swift_recon_medium_result]
-        result_values = [standard_result, recon_result]
+            standard_function, standard_result = calculate_radiomics_features(standard_img, standard_img_mask, feature)
+            _, swift_result = calculate_radiomics_features(swift_img, swift_img_mask, feature)
+            _, recon_low_result = calculate_radiomics_features(recon_low_img, recon_low_img_mask, feature)
+            _, recon_med_result = calculate_radiomics_features(recon_med_img, recon_med_img_mask, feature)
+            # _, swift_result = calculate_radiomics_features(swift_img, result[1])
+            # _, swift_recon_low_result = calculate_radiomics_features(swift_recon_low_img, result[2])
+            # _, swift_recon_medium_result = calculate_radiomics_features(swift_recon_medium_img, result[3])
 
-        for function_num, function_name in enumerate(standard_function):
-            results = [result_values[i][function_num] for i in range(len(result_values))]
-            row = [idx, function_name] + results
-            data.append(row)
+            # result_values = [standard_result, swift_result, swift_recon_low_result, swift_recon_medium_result]
+            result_values = [standard_result, swift_result, recon_low_result, recon_med_result]
 
-    # columns = ["Index", "Function", "Standard", "Swift", "Recon_L", "Recon_M"]
-    columns = ["Index", "Function", "Standard", "Recon"]
-    df = pd.DataFrame(data, columns=columns)
+            for function_num, function_name in enumerate(standard_function):
+                results = [result_values[i][function_num] for i in range(len(result_values))]
+                row = [idx, function_name] + results
+                data.append(row)
 
-    df.to_csv(csv_path, index=False)
+        columns = ["Index", "Function", "Standard", "Swift", "Recon_L", "Recon_M"]
+        df = pd.DataFrame(data, columns=columns)
 
-    calculate_std(csv_path)
+        df.to_csv(csv_path, index=False)
+
+        calculate_std(csv_path)
 
 
 def main():
