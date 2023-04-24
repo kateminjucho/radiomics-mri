@@ -368,7 +368,7 @@ def regression_test():
                               ('RadiomicsGLSZM', 16), ('RadiomicsNGTDM', 5), ('RadiomicsGLDM', 14)]
     for radiomics_feature, feature_num in radiomics_feature_list:
         print(radiomics_feature)
-        df = pd.read_csv('results/%s.csv'%radiomics_feature)
+        df = pd.read_csv('results/%s.csv' % radiomics_feature)
         # feature_num = 16
         standard_features = []
         swift_features = []
@@ -443,7 +443,32 @@ def regression_test():
     print('mse_swift: ', mean_squared_error(y, y_swift))
     print('mse_recon_l: ', mean_squared_error(y, y_recon_l))
     print('mse_recon_m: ', mean_squared_error(y, y_recon_m))
-
+    fig = plt.figure()
+    plt.scatter(np.ones(45), np.sqrt(np.square(y - y_standard)), alpha=0.2, color='black')
+    plt.scatter(1, np.mean(np.sqrt(np.square(y - y_standard))), alpha=1., marker='*', color='red', edgecolors='red')
+    plt.plot(np.ones(2), [np.mean(np.sqrt(np.square(y - y_standard))) - np.std(np.sqrt(np.square(y - y_standard))),
+                          np.mean(np.sqrt(np.square(y - y_standard))) + np.std(np.sqrt(np.square(y - y_standard)))],
+             color='red')
+    plt.scatter(np.ones(45) * 2, np.sqrt(np.square(y - y_swift)), alpha=0.2, color='yellow')
+    plt.scatter(2, np.mean(np.sqrt(np.square(y - y_swift))), alpha=1., marker='*', color='red', edgecolors='black')
+    plt.plot(np.ones(2) * 2, [np.mean(np.sqrt(np.square(y - y_swift))) - np.std(np.sqrt(np.square(y - y_swift))),
+                              np.mean(np.sqrt(np.square(y - y_swift))) + np.std(np.sqrt(np.square(y - y_swift)))],
+             color='red')
+    plt.scatter(np.ones(45) * 3, np.sqrt(np.square(y - y_recon_l)), alpha=0.2, color='blue')
+    plt.scatter(3, np.mean(np.sqrt(np.square(y - y_recon_l))), alpha=1., marker='*', color='red', edgecolors='black')
+    plt.plot(np.ones(2) * 3, [np.mean(np.sqrt(np.square(y - y_recon_l))) - np.std(np.sqrt(np.square(y - y_recon_l))),
+                              np.mean(np.sqrt(np.square(y - y_recon_l))) + np.std(np.sqrt(np.square(y - y_recon_l)))],
+             color='red')
+    plt.scatter(np.ones(45) * 4, np.sqrt(np.square(y - y_recon_m)), alpha=0.2, color='green')
+    plt.scatter(4, np.mean(np.sqrt(np.square(y - y_recon_m))), alpha=1., marker='*', color='red', edgecolors='black')
+    plt.plot(np.ones(2) * 4, [np.mean(np.sqrt(np.square(y - y_recon_m))) - np.std(np.sqrt(np.square(y - y_recon_m))),
+                              np.mean(np.sqrt(np.square(y - y_recon_m))) + np.std(np.sqrt(np.square(y - y_recon_m)))],
+             color='red')
+    fig.savefig('./scatter.png')
+    import scipy.stats as stats
+    t_stat, p_val = stats.ttest_ind(np.sqrt(np.square(y - y_standard)), np.sqrt(np.square(y - y_recon_l)),
+                                    equal_var=False)
+    print('p-value is ', p_val)
     pass
 
 
