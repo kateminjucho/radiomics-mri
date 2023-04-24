@@ -12,6 +12,8 @@ from PIL import Image
 from utils import norm_dcm_array, img_to_array
 import radiomics
 import numpy as np
+from pandas import read_csv
+from sklearn.metrics import mean_squared_error
 from radiomics.firstorder import RadiomicsFirstOrder
 from radiomics.shape2D import RadiomicsShape2D
 from radiomics.glcm import RadiomicsGLCM
@@ -30,6 +32,7 @@ from tqdm import tqdm
 import copy
 import os
 import tempfile
+from sklearn.linear_model import LinearRegression
 
 DATA_TYPE = 'yuhs'
 
@@ -141,7 +144,8 @@ def calculate_radiomics_features(img, mask, class_features):
     mask = sitk.GetImageFromArray(mask)
 
     features = class_features(img, mask)
-    if type(features) in [RadiomicsFirstOrder, RadiomicsGLCM, RadiomicsGLRLM, RadiomicsGLSZM, RadiomicsNGTDM, RadiomicsGLDM]:
+    if type(features) in [RadiomicsFirstOrder, RadiomicsGLCM, RadiomicsGLRLM, RadiomicsGLSZM, RadiomicsNGTDM,
+                          RadiomicsGLDM]:
         features._initCalculation()
 
     available_function_list = [attr for attr in dir(features) if
@@ -216,13 +220,14 @@ def calculate_std(csv_path):
     standard_deviations_df.to_csv(std_csv_path, index=False)
 
 
-def on_mouse(event, x, y, flags, param): # (x,y)의 (0,0)은 좌측 상단점 기준
+def on_mouse(event, x, y, flags, param):  # (x,y)의 (0,0)은 좌측 상단점 기준
     global final_img, cache, point1, tissue_1_radius
 
-    if event == cv2.EVENT_LBUTTONDOWN: # 마우스 좌클릭 시 빨간색 원 그려짐
+    if event == cv2.EVENT_LBUTTONDOWN:  # 마우스 좌클릭 시 빨간색 원 그려짐
+        print(x, y)
         cache = copy.deepcopy(final_img)
         point1.append((x, y))
-        cv2.circle(final_img, (x, y), tissue_1_radius, color=(0, 0, 255), thickness=-1)    # roi mask 1 생성
+        cv2.circle(final_img, (x, y), tissue_1_radius, color=(0, 0, 255), thickness=-1)  # roi mask 1 생성
         cv2.imshow('window', final_img)
 
 
@@ -252,13 +257,11 @@ def get_roi(img_npy: np.ndarray, save_path: str = None, x_center: int = 0, y_cen
                 print('ESC Pressed, the windows will closed')
                 cv2.destroyAllWindows()
                 break
-            elif cv2.waitKey(0) & 0xFF == 32: # spacebar 두 번 누르면 undo
+            elif cv2.waitKey(0) & 0xFF == 32:  # spacebar 두 번 누르면 undo
                 final_img = copy.deepcopy(cache)
                 cv2.imshow('window', final_img)
             else:
                 continue
-
-        # 좌표 저장
 
         tissue_x_center1 = point1[0][0]
         tissue_y_center1 = point1[0][1]
@@ -269,7 +272,8 @@ def get_roi(img_npy: np.ndarray, save_path: str = None, x_center: int = 0, y_cen
         # tissue_pixel1 = []
 
     mask = np.zeros_like((img_npy)).astype(np.uint8)
-    mask = cv2.circle(mask, (tissue_x_center1, tissue_y_center1), radius=tissue_1_radius, color=(255, 0, 0), thickness=-1)
+    mask = cv2.circle(mask, (tissue_x_center1, tissue_y_center1), radius=tissue_1_radius, color=(255, 0, 0),
+                      thickness=-1)
 
     # for i in range(0, len(tissue_point1)):
     #     tissue_pixel1.append(img_npy[tissue_point1[i]])
@@ -280,37 +284,53 @@ def get_roi(img_npy: np.ndarray, save_path: str = None, x_center: int = 0, y_cen
 
     return mask, tissue_x_center1, tissue_y_center1
 
+
 def analyze_radiomics():
     standard_x, standard_y, swift_x, swift_y, recon_low_x, recon_low_y, recon_med_x, recon_med_y = [], [], [], [], [], [], [], []
-    feature_list = [RadiomicsFirstOrder, RadiomicsShape2D, RadiomicsGLCM, RadiomicsGLRLM, RadiomicsGLSZM, RadiomicsNGTDM, RadiomicsGLDM]
+    feature_list = [RadiomicsFirstOrder, RadiomicsShape2D, RadiomicsGLCM, RadiomicsGLRLM, RadiomicsGLSZM,
+                    RadiomicsNGTDM, RadiomicsGLDM]
     for feature in feature_list:
         data = []
         feature_name = str(feature).split("'")[1].split('.')[-1]
         csv_path = "./%s_radiomics/%s.csv" % (DATA_TYPE, feature_name)
         for idx in tqdm(range(45)):
             # standard_img, swift_img, swift_recon_low_img, swift_recon_medium_img = get_data(idx)
-            standard_img, swift_img, recon_low_img, recon_med_img, standard_img_npy, swift_img_npy, recon_low_img_npy, recon_med_img_npy = get_data(idx)
-
+            standard_img, swift_img, recon_low_img, recon_med_img, standard_img_npy, swift_img_npy, recon_low_img_npy, recon_med_img_npy = get_data(
+                idx)
             # temporary_mask = np.zeros([512, 512]).astype(np.uint8)
             # temporary_mask[200:250, 200:250] = 1
 
             try:
-                standard_img_mask, _, _ = get_roi(standard_img_npy, './%s_roi/%03d_standard_mask.png' % (DATA_TYPE, idx), standard_x[idx], standard_y[idx], True)
-                swift_img_mask, _, _ = get_roi(swift_img_npy, './%s_roi/%03d_swift_mask.png' % (DATA_TYPE, idx), swift_x[idx], swift_y[idx], True)
-                recon_low_img_mask, _, _ = get_roi(recon_low_img_npy, './%s_roi/%03d_recon_low_mask.png' % (DATA_TYPE, idx), recon_low_x[idx], recon_low_y[idx], True)
-                recon_med_img_mask, _, _ = get_roi(recon_med_img_npy, './%s_roi/%03d_recon_med_mask.png' % (DATA_TYPE, idx), recon_med_x[idx], recon_med_y[idx], True)
+                standard_img_mask, _, _ = get_roi(standard_img_npy,
+                                                  './%s_roi/%03d_standard_mask.png' % (DATA_TYPE, idx), standard_x[idx],
+                                                  standard_y[idx], True)
+                swift_img_mask, _, _ = get_roi(swift_img_npy, './%s_roi/%03d_swift_mask.png' % (DATA_TYPE, idx),
+                                               swift_x[idx], swift_y[idx], True)
+                recon_low_img_mask, _, _ = get_roi(recon_low_img_npy,
+                                                   './%s_roi/%03d_recon_low_mask.png' % (DATA_TYPE, idx),
+                                                   recon_low_x[idx], recon_low_y[idx], True)
+                recon_med_img_mask, _, _ = get_roi(recon_med_img_npy,
+                                                   './%s_roi/%03d_recon_med_mask.png' % (DATA_TYPE, idx),
+                                                   recon_med_x[idx], recon_med_y[idx], True)
 
             except:
-                standard_img_mask, st_x, st_y = get_roi(standard_img_npy, './%s_roi/%03d_standard_mask.png' % (DATA_TYPE, idx), 0, 0, False)
+                standard_img_mask, st_x, st_y = get_roi(standard_img_npy,
+                                                        './%s_roi/%03d_standard_mask.png' % (DATA_TYPE, idx), 0, 0,
+                                                        False)
                 standard_x.append(st_x)
                 standard_y.append(st_y)
-                swift_img_mask, sw_x, sw_y = get_roi(swift_img_npy, './%s_roi/%03d_swift_mask.png' % (DATA_TYPE, idx), 0, 0, False)
+                swift_img_mask, sw_x, sw_y = get_roi(swift_img_npy, './%s_roi/%03d_swift_mask.png' % (DATA_TYPE, idx),
+                                                     0, 0, False)
                 swift_x.append(sw_x)
                 swift_y.append(sw_y)
-                recon_low_img_mask, rl_x, rl_y = get_roi(recon_low_img_npy, './%s_roi/%03d_recon_low_mask.png' % (DATA_TYPE, idx), 0, 0, False)
+                recon_low_img_mask, rl_x, rl_y = get_roi(recon_low_img_npy,
+                                                         './%s_roi/%03d_recon_low_mask.png' % (DATA_TYPE, idx), 0, 0,
+                                                         False)
                 recon_low_x.append(rl_x)
                 recon_low_y.append(rl_y)
-                recon_med_img_mask, rm_x, rm_y = get_roi(recon_med_img_npy, './%s_roi/%03d_recon_med_mask.png' % (DATA_TYPE, idx), 0, 0, False)
+                recon_med_img_mask, rm_x, rm_y = get_roi(recon_med_img_npy,
+                                                         './%s_roi/%03d_recon_med_mask.png' % (DATA_TYPE, idx), 0, 0,
+                                                         False)
                 recon_med_x.append(rm_x)
                 recon_med_y.append(rm_y)
 
@@ -341,8 +361,95 @@ def analyze_radiomics():
         calculate_std(csv_path)
 
 
+def regression_test():
+    ''' Parsing csv '''
+    subject_num = 45
+    radiomics_feature_list = [('RadiomicsFirstOrder', 19), ('RadiomicsGLCM', 24), ('RadiomicsGLRLM', 16),
+                              ('RadiomicsGLSZM', 16), ('RadiomicsNGTDM', 5), ('RadiomicsGLDM', 14)]
+    for radiomics_feature, feature_num in radiomics_feature_list:
+        print(radiomics_feature)
+        df = pd.read_csv('results/%s.csv'%radiomics_feature)
+        # feature_num = 16
+        standard_features = []
+        swift_features = []
+        recon_l_features = []
+        recon_m_features = []
+        for sub_idx in range(subject_num):
+            print(sub_idx)
+            tmp_standard_features = []
+            tmp_swift_features = []
+            tmp_recon_l_features = []
+            tmp_recon_m_features = []
+            for feature_idx in range(feature_num):
+                features = df.iloc[sub_idx * feature_num + feature_idx]
+                if len(features['Standard']) == 1:
+                    standard_feature = 0.
+                else:
+                    standard_feature = float(features['Standard'][1:-1])
+                if len(features['Swift']) == 1:
+                    swift_feature = 0.
+                else:
+                    swift_feature = float(features['Swift'][1:-1])
+                if len(features['Recon_L']) == 1:
+                    recon_l_feature = 0.
+                else:
+                    recon_l_feature = float(features['Recon_L'][1:-1])
+                if len(features['Recon_M']) == 1:
+                    recon_m_feature = 0.
+                else:
+                    recon_m_feature = float(features['Recon_M'][1:-1])
+                tmp_standard_features.append(standard_feature)
+                tmp_swift_features.append(swift_feature)
+                tmp_recon_l_features.append(recon_l_feature)
+                tmp_recon_m_features.append(recon_m_feature)
+            standard_features.append(tmp_standard_features)
+            swift_features.append(tmp_swift_features)
+            recon_l_features.append(tmp_recon_l_features)
+            recon_m_features.append(tmp_recon_m_features)
+
+    standard_x = np.array(standard_features)
+    swift_x = np.array(swift_features)
+    recon_l_x = np.array(recon_l_features)
+    recon_m_x = np.array(recon_m_features)
+    total_x = np.concatenate([standard_x, swift_x, recon_l_x, recon_m_x], axis=0)
+
+    # get mean and std of total_x
+    mean = np.mean(total_x, axis=0)
+    std = np.std(total_x, axis=0)
+
+    standard_x = (standard_x - mean) / std
+    swift_x = (swift_x - mean) / std
+    recon_l_x = (recon_l_x - mean) / std
+    recon_m_x = (recon_m_x - mean) / std
+
+    df = pd.read_excel('./results/age_gt.xlsx')
+    y = np.array(list(df.iloc[2:47]['Unnamed: 3']))
+
+    reg_standard = LinearRegression().fit(standard_x, y)
+    print('standard: ', reg_standard.score(standard_x, y))
+    reg_swift = LinearRegression().fit(swift_x, y)
+    print('swift: ', reg_swift.score(swift_x, y))
+    reg_recon_l = LinearRegression().fit(recon_l_x, y)
+    print('recon_l: ', reg_recon_l.score(recon_l_x, y))
+    reg_recon_m = LinearRegression().fit(recon_m_x, y)
+    print('recon_m: ', reg_recon_m.score(recon_m_x, y))
+
+    y_standard = reg_standard.predict(standard_x)
+    y_swift = reg_swift.predict(swift_x)
+    y_recon_l = reg_recon_l.predict(recon_l_x)
+    y_recon_m = reg_recon_m.predict(recon_m_x)
+
+    print('mse_standard: ', mean_squared_error(y, y_standard))
+    print('mse_swift: ', mean_squared_error(y, y_swift))
+    print('mse_recon_l: ', mean_squared_error(y, y_recon_l))
+    print('mse_recon_m: ', mean_squared_error(y, y_recon_m))
+
+    pass
+
+
 def main():
-    analyze_radiomics()
+    regression_test()
+    # analyze_radiomics()
 
 
 if __name__ == '__main__':
